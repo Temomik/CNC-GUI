@@ -111,12 +111,15 @@ class ResizingCanvas(Canvas):
         fileMenu.add_command(label="Stop", command=self.stopPlotting)
         menubar.add_cascade(label="Settings", menu=settingsMenu)
         settingsMenu.add_command(label="Choose bg color", command=self.bgColorChoose)
-        menubar.add_command(label="X+", command=self.onOpen)
-        menubar.add_command(label="X-", command=self.onOpen)
-        menubar.add_command(label="Y+", command=self.onOpen)
-        menubar.add_command(label="Y-", command=self.onOpen)
-        menubar.add_command(label="Z+", command=self.onOpen)
-        menubar.add_command(label="Z-", command=self.onOpen)
+        step = 20
+        speed = 1000
+        menubar.add_command(label="X+", command=lambda : self.sendPacket([3,-step,0,0,speed,0,0]))
+        menubar.add_command(label="X-", command=lambda : self.sendPacket([3,1*step,0,0,speed,0,0]))
+        menubar.add_command(label="Y+", command=lambda : self.sendPacket([3,0,1*step,0,0,speed,0]))
+        menubar.add_command(label="Y-", command=lambda : self.sendPacket([3,0,-1*step,0,0,speed,0]))
+        menubar.add_command(label="Z+", command=lambda : self.sendPacket([3,20,0,1*step,0,0,speed]))
+        menubar.add_command(label="Z-", command=lambda : self.sendPacket([3,20,0,-1*step,0,0,speed]))
+            # pass
         self.master.config(menu=menubar)
 
     
@@ -138,8 +141,11 @@ class ResizingCanvas(Canvas):
         menubar.add_cascade(label="COM options", menu=comOptions)
         comOptions.add_cascade(label="Rate", menu=comRateSelect)
         comOptions.add_cascade(label="Port", menu=comSelect)
-        
-        # opt.pack()
+    def sendPacket(self,arr):
+        try:
+            sendPacket(arr,self)
+        except (OSError, serial.SerialException) :
+            tk.messagebox.showerror(title="Error!", message="Connect to port!!")
     def stopPlotting(self):
         closeThread = True
         # self.plotTread.stop
@@ -210,12 +216,12 @@ def top(a,b):
     print(a)
     print(b)
     a = b
-def plotThread(args):
+def plotThread():
     # while 1 :
     #     if closeThread == True:
     #         return
     # #     print(canvas.fileName)
-    plot(canvas.fileName,args)
+    plot(canvas.fileName)
 
 count = 0
 zoom = 9
@@ -311,14 +317,25 @@ def parseGcode(finput,foutput):
     border.append(maxY)
     return border
 
+def sendPacket(arr,canvas):
+    packet = arr[0].to_bytes(1, byteorder='little', signed=True)
+    packet += arr[1].to_bytes(4, byteorder='little', signed=True)
+    packet += arr[2].to_bytes(4, byteorder='little', signed=True)
+    packet += arr[3].to_bytes(4, byteorder='little', signed=True)
+    packet += arr[4].to_bytes(2, byteorder='little', signed=True)
+    packet += arr[5].to_bytes(2, byteorder='little', signed=True)
+    packet += arr[6].to_bytes(2, byteorder='little', signed=True)
+    canvas.getMonitor().write(b"2")
 
 closeThread = False
-def plot(finput,border):
+
+def plot(finput):
     cords = []
+    border = parseGcode(finput,"output.txt")
     monitor = canvas.getMonitor()
     # monitor = serial.Serial(comPort.get(), baudRate.get(), timeout=1, rtscts=1)
     time.sleep(5)  # give the connection a second to settle
-    fin = open(finput,"r")
+    fin = open("output.txt","r")
     trashLinesId = []
     x = 0
     y = 0
@@ -326,21 +343,13 @@ def plot(finput,border):
     ny = 0
     skipDraw = False
     for str in fin:
-        print(str)
         request = "0"
         arr = list(map(int,str[0:-1].split(" ")))
         cords.append(arr)
-        packet = arr[0].to_bytes(1, byteorder='little', signed=True)
-        packet += arr[1].to_bytes(4, byteorder='little', signed=True)
-        packet += arr[2].to_bytes(4, byteorder='little', signed=True)
-        packet += arr[3].to_bytes(4, byteorder='little', signed=True)
-        packet += arr[4].to_bytes(2, byteorder='little', signed=True)
-        packet += arr[5].to_bytes(2, byteorder='little', signed=True)
-        packet += arr[6].to_bytes(2, byteorder='little', signed=True)
-        monitor.write(packet)
-
-        # print("__________send____________")
-        # print(str[0:-1])          
+        packet = sendPacket(arr,canvas)
+        # monitor.write(packet)
+        print("__________send____________")
+        print(str[0:-1])          
         
         while len(request) == 0 or request[0] != 110: # 'n' == 110 next 
             # print("___")
@@ -348,7 +357,6 @@ def plot(finput,border):
             # print("___")
             if closeThread == True:
                 monitor.write(b"2")
-                # print("kek")
                 return
             if len(request) != 0 and request[0] == 110:
                 break
@@ -398,8 +406,7 @@ def main():
     canvas.pack(fill=BOTH,expand=1)
     root.protocol("WM_DELETE_WINDOW", onClosing)
     root.resizable(True,True)
-    border = parseGcode("input.txt","output.txt")
-    plot = threading.Thread(target=plotThread,args=[border])
+    plot = threading.Thread(target=plotThread)
     # plot.start()
     canvas.setPlotThread(plot)
     root.mainloop()
