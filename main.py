@@ -325,7 +325,7 @@ def sendPacket(arr,canvas):
     packet += arr[4].to_bytes(2, byteorder='little', signed=True)
     packet += arr[5].to_bytes(2, byteorder='little', signed=True)
     packet += arr[6].to_bytes(2, byteorder='little', signed=True)
-    canvas.getMonitor().write(b"2")
+    canvas.getMonitor().write(packet)
 
 closeThread = False
 
